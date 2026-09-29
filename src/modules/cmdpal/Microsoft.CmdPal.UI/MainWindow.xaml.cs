@@ -76,6 +76,7 @@ public sealed partial class MainWindow : WindowEx,
     private readonly KeyboardListener _keyboardListener;
     private readonly LocalKeyboardListener _localKeyboardListener;
     private readonly HiddenOwnerWindowBehavior _hiddenOwnerBehavior = new();
+    private readonly CopilotKeyRegistration? _copilotKeyRegistration;
     private readonly ICmdPalProtocolActivation _protocolActivation;
     private readonly ViewModels.Models.IMonitorService _monitorService;
     private readonly IThemeService _themeService;
@@ -236,6 +237,15 @@ public sealed partial class MainWindow : WindowEx,
 
         // Force window to be created, and then cloaked. This will offset initial animation when the window is shown.
         HideWindow();
+
+        try
+        {
+            _copilotKeyRegistration = new CopilotKeyRegistration((nint)_hwnd);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError("Failed to register Copilot key fast-path activation", ex);
+        }
     }
 
     private void OnAutoGoHomeTimerOnTick(object? s, object e)
@@ -1187,6 +1197,7 @@ public sealed partial class MainWindow : WindowEx,
 
     internal void MainWindow_Closed(object sender, WindowEventArgs args)
     {
+        _copilotKeyRegistration?.Dispose();
         SaveWindowPosition();
 
         var extensionServices = App.Current.Services.GetServices<IExtensionService>();
@@ -1795,6 +1806,14 @@ public sealed partial class MainWindow : WindowEx,
     {
         switch (uMsg)
         {
+            case CopilotKeyRegistration.MessageId:
+                if (wParam.Value == CopilotKeyRegistration.SingleTap)
+                {
+                    Summon(string.Empty);
+                }
+
+                return (LRESULT)0;
+
             // Prevent the window from maximizing when double-clicking the title bar area
             case PInvoke.WM_NCLBUTTONDBLCLK:
                 return (LRESULT)IntPtr.Zero;
@@ -2008,6 +2027,7 @@ public sealed partial class MainWindow : WindowEx,
 
     public void Dispose()
     {
+        _copilotKeyRegistration?.Dispose();
         _themeService.ThemeChanged -= ThemeServiceOnThemeChanged;
         App.Current.Services.GetRequiredService<ISettingsService>().SettingsChanged -= SettingsChangedHandler;
 
